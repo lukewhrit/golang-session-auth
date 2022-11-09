@@ -1,89 +1,83 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
+	"math/big"
 	"net/http"
-	"time"
 
-	"github.com/go-redis/redis/v8"
-	"github.com/gofrs/uuid"
+	"crypto/rand"
+
+	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/crypto/sha3"
 )
 
 var users = map[string]string{
-	"user1": "password1",
+	"user1": hashAndSalt([]byte("password1")),
 	"user2": "password2",
 }
 
+// signin takes a username and password and gives back a session token
 func signin(w http.ResponseWriter, r *http.Request) {
-	var creds credentials
+	var body credentials
 
-	// Decode JSON request body
-	if err := json.NewDecoder(r.Body).Decode(&creds); err != nil {
-		// If the body is invalid, error
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		return
+		log.Print(err)
 	}
 
-	// Get the expected password from the database
-	expectedPassword, ok := users[creds.Username]
+	if bcrypt.CompareHashAndPassword([]byte(users[body.Username]), []byte(body.Password)) == nil {
+		var p, s, salt *big.Int
+		var err error
 
-	if !ok || expectedPassword != creds.Password {
+		// maybe make the public string a uuid?
+		if p, err = rand.Prime(rand.Reader, 64); err != nil {
+			log.Fatal(err)
+		}
+
+		if s, err = rand.Prime(rand.Reader, 64); err != nil {
+			log.Fatal(err)
+		}
+
+		if salt, err = rand.Prime(rand.Reader, 32); err != nil {
+			log.Fatal(err)
+		}
+
+		secret := sha3.Sum256(append(s.Bytes()[:], salt.Bytes()[:]...))
+
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		// goes to user, this should be compounded into a token format like: v1.public.secret.salt
+		x := map[string]interface{}{
+			"public": p.String(),                                   // public string
+			"secret": base64.URLEncoding.EncodeToString(s.Bytes()), // secret before hashing & salting
+		}
+
+		// goes to database
+		y := map[string]interface{}{
+			"public": p.String(),                                   // public string, primary key for session entries
+			"secret": base64.URLEncoding.EncodeToString(secret[:]), // secret after hashing & salting
+		}
+
+		fmt.Println(x)
+		fmt.Println(y)
+		w.Write([]byte(fmt.Sprintf("v1.%s.%s", p.String(), base64.URLEncoding.EncodeToString(s.Bytes()))))
+	} else {
 		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte("password is not in db"))
 	}
-
-	// Create a new session token
-	uuid, _ := uuid.NewV4()
-	sessionToken := uuid.String()
-
-	q := cache.SetEX(ctx, sessionToken, creds.Username, 120*time.Second)
-
-	if err := q.Err(); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	// Now, set the client cookie
-	http.SetCookie(w, &http.Cookie{
-		Name:    "session_token",
-		Value:   sessionToken,
-		Expires: time.Now().Add(120 * time.Second),
-	})
-
-	w.Write([]byte("welcome"))
 }
 
+// welcome is an example of a function requiring an authenticated user
 func welcome(w http.ResponseWriter, r *http.Request) {
-	c, err := r.Cookie("session_token")
+	secret := r.Header.Get("Auth-Token")
+	public := r.Header.Get("Auth-Token-Identifier")
 
-	if err != nil {
-		if err == http.ErrNoCookie {
-			// If the cookie doesn't exist, return an unauthorized status
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
+	w.Write([]byte(authHeader))
 
-		// For any other error, return a bad request status
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	sessionToken := c.Value
-
-	// Get name of user from cache
-	get, err := cache.Get(ctx, sessionToken).Result()
-
-	if err != nil {
-		if err == redis.Nil {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	w.Write([]byte(
-		fmt.Sprintf("Welcome %s!", get),
-	))
+	// compare authHeader with a token in the database
 }
