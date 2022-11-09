@@ -13,7 +13,7 @@ const (
 	databaseURI = "redis://localhost:6379/0"
 )
 
-var cache *redis.Client
+var rdb *redis.Client
 var ctx = context.Background()
 
 func init() {
@@ -22,7 +22,7 @@ func init() {
 		panic(err)
 	}
 
-	cache = redis.NewClient(opt)
+	rdb = redis.NewClient(opt)
 }
 
 func main() {

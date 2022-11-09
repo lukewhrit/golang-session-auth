@@ -1,14 +1,12 @@
 package main
 
 import (
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
-	"math/big"
 	"net/http"
-
-	"crypto/rand"
 
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/crypto/sha3"
@@ -29,19 +27,9 @@ func signin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if bcrypt.CompareHashAndPassword([]byte(users[body.Username]), []byte(body.Password)) == nil {
-		var p, s, salt *big.Int
-		var err error
+		p, s, salt, err := generateStrings([]int{64, 64, 32})
 
-		// maybe make the public string a uuid?
-		if p, err = rand.Prime(rand.Reader, 64); err != nil {
-			log.Fatal(err)
-		}
-
-		if s, err = rand.Prime(rand.Reader, 64); err != nil {
-			log.Fatal(err)
-		}
-
-		if salt, err = rand.Prime(rand.Reader, 32); err != nil {
+		if err != nil {
 			log.Fatal(err)
 		}
 
@@ -51,20 +39,11 @@ func signin(w http.ResponseWriter, r *http.Request) {
 			log.Fatal(err)
 		}
 
-		// goes to user, this should be compounded into a token format like: v1.public.secret.salt
-		x := map[string]interface{}{
-			"public": p.String(),                                   // public string
-			"secret": base64.URLEncoding.EncodeToString(s.Bytes()), // secret before hashing & salting
+		if err := rdb.Set(ctx, p.String(), fmt.Sprintf("v1.%s.%s.%s", p.String(),
+			base64.URLEncoding.EncodeToString(secret[:]), salt.String()), 0).Err(); err != nil {
+			log.Fatal(err)
 		}
 
-		// goes to database
-		y := map[string]interface{}{
-			"public": p.String(),                                   // public string, primary key for session entries
-			"secret": base64.URLEncoding.EncodeToString(secret[:]), // secret after hashing & salting
-		}
-
-		fmt.Println(x)
-		fmt.Println(y)
 		w.Write([]byte(fmt.Sprintf("v1.%s.%s", p.String(), base64.URLEncoding.EncodeToString(s.Bytes()))))
 	} else {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -74,10 +53,33 @@ func signin(w http.ResponseWriter, r *http.Request) {
 
 // welcome is an example of a function requiring an authenticated user
 func welcome(w http.ResponseWriter, r *http.Request) {
-	secret := r.Header.Get("Auth-Token")
-	public := r.Header.Get("Auth-Token-Identifier")
+	token, err := parseToken(r.Header.Get("Auth-Token"))
 
-	w.Write([]byte(authHeader))
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("problem parsing token. is it valid?"))
+	}
+
+	resp, err := rdb.Get(ctx, token.Public).Bytes()
+
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(err.Error()))
+	}
+
+	dbToken, err := parseToken(string(resp))
+
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(err.Error()))
+	}
+
+	// todo UN BASE 64
+
+	saltedIncomingToken := sha3.Sum256(append([]byte(token.Secret), []byte(dbToken.Salt)...))
+
+	fmt.Println(saltedIncomingToken)
 
 	// compare authHeader with a token in the database
+	fmt.Println(subtle.ConstantTimeCompare(saltedIncomingToken[:], []byte(dbToken.Secret)))
 }

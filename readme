@@ -1,0 +1,29 @@
+golang-session-auth
+=======
+
+This software is an example of a simple session authentication server implemented in Go.
+
+With the /signin route we generate a token with the following components: version, public identifier, secret. The public identifier is given to the user and stored in the database as-is. The secret is given to the user as-is and stored in the database after being hashed and salted with SHA-256. Alongside the secret, the salt of the secret is also stored in the database so that is possible to authenticate.
+
+The /welcome route demonstrates a route requiring the user to be authenticated. It receives a token in the "Auth-Token" header and parses it, using its public part to retrieve the entry stored in the database. Using information from the database, it salts the provided (unhashed) secret, hashes it and salts it, and then compares it to what's stored in the database. If the now-hashed secrets both match, the user is considered authenticated.
+
+It uses constant-time comparison functions wherever applicable, so that we are not vulnerable to timing attacks. It also only uses cryptography packages from the Go stdlib for improved security. If you have any suggestions or questions, make an issue or pull request.
+
+License
+=======
+
+BSD Zero Clause License
+
+Copyright (c) 2022 Luke Whritenour
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.
+
