@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"fmt"
 	"log"
-	"math/big"
 	"strings"
 
 	"golang.org/x/crypto/bcrypt"
@@ -36,17 +35,28 @@ func hashAndSalt(pwd []byte) string {
 	return string(hash)
 }
 
-func generateStrings(bits []int) (a, b, c *big.Int, err error) {
-	if a, err = rand.Prime(rand.Reader, bits[0]); err != nil {
-		return nil, nil, nil, err
+func prngString() string {
+	b := make([]byte, 10)
+	_, err := rand.Read(b)
+	if err != nil {
+		fmt.Println("error:", err)
+		return ""
 	}
 
-	if b, err = rand.Prime(rand.Reader, bits[1]); err != nil {
-		return nil, nil, nil, err
+	return fmt.Sprintf("%x", b)
+}
+
+func generateStrings(bits []int) (a, b, c string, err error) {
+	if a = prngString(); err != nil {
+		return "", "", "", err
 	}
 
-	if c, err = rand.Prime(rand.Reader, bits[2]); err != nil {
-		return nil, nil, nil, err
+	if b = prngString(); err != nil {
+		return "", "", "", err
+	}
+
+	if c = prngString(); err != nil {
+		return "", "", "", err
 	}
 
 	return a, b, c, err
@@ -55,8 +65,6 @@ func generateStrings(bits []int) (a, b, c *big.Int, err error) {
 func parseToken(token string) (Token, error) {
 	var tok Token
 	toks := strings.Split(token, ".")
-
-	fmt.Println(toks[0])
 
 	tok.Version = toks[0]
 	tok.Public = toks[1]
@@ -67,4 +75,8 @@ func parseToken(token string) (Token, error) {
 	}
 
 	return tok, nil
+}
+
+func makeToken(token Token) string {
+	return fmt.Sprintf("%s.%s.%s.%s", token.Version, token.Public, token.Secret, token.Salt)
 }

@@ -1,12 +1,12 @@
 package main
 
 import (
-	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/crypto/sha3"
@@ -33,18 +33,33 @@ func signin(w http.ResponseWriter, r *http.Request) {
 			log.Fatal(err)
 		}
 
-		secret := sha3.Sum256(append(s.Bytes()[:], salt.Bytes()[:]...))
+		buf := []byte(s + salt)
+		secret := make([]byte, 64)
+		sha3.ShakeSum256(secret, buf)
+
+		userToken := makeToken(Token{
+			Version: "v1",
+			Public:  p,
+			Secret:  base64.URLEncoding.EncodeToString([]byte(s)),
+			Salt:    salt,
+		})
+
+		serverToken := makeToken(Token{
+			Version: "v1",
+			Public:  p,
+			Secret:  fmt.Sprintf("%x", secret),
+			Salt:    salt,
+		})
 
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		if err := rdb.Set(ctx, p.String(), fmt.Sprintf("v1.%s.%s.%s", p.String(),
-			base64.URLEncoding.EncodeToString(secret[:]), salt.String()), 0).Err(); err != nil {
+		if err := rdb.Set(ctx, p, serverToken, 0).Err(); err != nil {
 			log.Fatal(err)
 		}
 
-		w.Write([]byte(fmt.Sprintf("v1.%s.%s", p.String(), base64.URLEncoding.EncodeToString(s.Bytes()))))
+		w.Write([]byte(userToken))
 	} else {
 		w.WriteHeader(http.StatusUnauthorized)
 		w.Write([]byte("password is not in db"))
@@ -53,33 +68,42 @@ func signin(w http.ResponseWriter, r *http.Request) {
 
 // welcome is an example of a function requiring an authenticated user
 func welcome(w http.ResponseWriter, r *http.Request) {
-	token, err := parseToken(r.Header.Get("Auth-Token"))
+	if strings.HasPrefix(r.Header.Get("Auth-Token"), "v1") {
+		token, err := parseToken(r.Header.Get("Auth-Token"))
 
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("problem parsing token. is it valid?"))
+		if err != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			w.Write([]byte("parsing auth token errored. is it valid?"))
+		}
+
+		entry := rdb.Get(ctx, token.Public).String()
+
+		if entry != "" {
+			entryToken, err := parseToken(entry)
+
+			if err != nil {
+				w.WriteHeader(http.StatusBadGateway)
+				w.Write([]byte("parsing auth token in database errored. is it valid?"))
+			}
+
+			fmt.Println("E", entryToken.Secret)
+
+			unb64dSecret, err := base64.URLEncoding.DecodeString(entryToken.Secret)
+
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte("problem decoding secret from base64"))
+				w.Write([]byte(err.Error()))
+			}
+
+			buf := []byte(string(unb64dSecret) + token.Salt)
+			secret := make([]byte, 64)
+			sha3.ShakeSum256(secret, buf)
+
+			fmt.Printf("%x\n", secret)
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte("entry is nil"))
+		}
 	}
-
-	resp, err := rdb.Get(ctx, token.Public).Bytes()
-
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(err.Error()))
-	}
-
-	dbToken, err := parseToken(string(resp))
-
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(err.Error()))
-	}
-
-	// todo UN BASE 64
-
-	saltedIncomingToken := sha3.Sum256(append([]byte(token.Secret), []byte(dbToken.Salt)...))
-
-	fmt.Println(saltedIncomingToken)
-
-	// compare authHeader with a token in the database
-	fmt.Println(subtle.ConstantTimeCompare(saltedIncomingToken[:], []byte(dbToken.Secret)))
 }
