@@ -3,11 +3,26 @@ golang-session-auth
 
 This software is an example of a simple session authentication server implemented in Go.
 
-With the /signin route we generate a token with the following components: version, public identifier, secret. The public identifier is given to the user and stored in the database as-is. The secret is given to the user as-is and stored in the database after being hashed and salted with SHA-256. Alongside the secret, the salt of the secret is also stored in the database so that is possible to authenticate.
+With the /signin route we generate a token with the following components: version, public
+identifier, secret. The public identifier is given to the user and stored in the database as-is. The
+secret is given to the user as-is and stored in the database after being hashed and salted with
+SHA-256. Alongside the secret, the salt of the secret is also stored in the database so that is
+possible to authenticate.
 
-The /welcome route demonstrates a route requiring the user to be authenticated. It receives a token in the "Auth-Token" header and parses it, using its public part to retrieve the entry stored in the database. Using information from the database, it salts the provided (unhashed) secret, hashes it and salts it, and then compares it to what's stored in the database. If the now-hashed secrets both match, the user is considered authenticated.
+The /welcome route demonstrates a route requiring the user to be authenticated. It receives a token
+in the "Authorization" header and parses it, using its public part to retrieve the
+entry stored in the database. Using information from the database, it salts the provided (unhashed)
+secret, hashes it and salts it, and then compares it to what's stored in the database. If the
+now-hashed secrets both match, the user is considered authenticated.
 
-It uses constant-time comparison functions wherever applicable, so that we are not vulnerable to timing attacks. It also only uses cryptography packages from the Go stdlib for improved security. If you have any suggestions or questions, make an issue or pull request.
+It uses constant-time comparison functions wherever applicable, so that we are not vulnerable to 
+timing attacks. It also only uses cryptography packages from the Go stdlib for improved security. If
+you have any suggestions or questions, make an issue or pull request.
+
+Another note is, in actual implementation's you should **not** use Redis. Use PostgreSQL or
+something instead, store `public` as your primary key and `token` and secret` either in the same
+column or two separate ones. The reason to store them in the same column is so that it's harder to
+mismatch the two columns, but realistically that's very hard so it's up to you.
 
 License
 =======

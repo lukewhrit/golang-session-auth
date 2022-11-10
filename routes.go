@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -72,7 +73,7 @@ func welcome(w http.ResponseWriter, r *http.Request) {
 		token, err := parseToken(r.Header.Get("Auth-Token"))
 
 		if err != nil {
-			w.WriteHeader(http.StatusBadGateway)
+			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte("parsing auth token errored. is it valid?"))
 		}
 
@@ -82,13 +83,11 @@ func welcome(w http.ResponseWriter, r *http.Request) {
 			entryToken, err := parseToken(entry)
 
 			if err != nil {
-				w.WriteHeader(http.StatusBadGateway)
+				w.WriteHeader(http.StatusBadRequest)
 				w.Write([]byte("parsing auth token in database errored. is it valid?"))
 			}
 
-			fmt.Println("E", entryToken.Secret)
-
-			unb64dSecret, err := base64.URLEncoding.DecodeString(entryToken.Secret)
+			unb64dSecret, err := base64.URLEncoding.DecodeString(token.Secret)
 
 			if err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
@@ -100,9 +99,18 @@ func welcome(w http.ResponseWriter, r *http.Request) {
 			secret := make([]byte, 64)
 			sha3.ShakeSum256(secret, buf)
 
-			fmt.Printf("%x\n", secret)
+			if subtle.ConstantTimeCompare(
+				[]byte(entryToken.Secret),         // secret from the database (already in hex)
+				[]byte(fmt.Sprintf("%x", secret)), // secret from the request (now salted & hashed, and converted to hex)
+			) == 1 { // we are authenticated
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("welcome"))
+			} else {
+				w.WriteHeader(http.StatusUnauthorized)
+				w.Write([]byte("bad token"))
+			}
 		} else {
-			w.WriteHeader(http.StatusNotFound)
+			w.WriteHeader(http.StatusUnauthorized)
 			w.Write([]byte("entry is nil"))
 		}
 	}

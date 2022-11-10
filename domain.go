@@ -29,7 +29,7 @@ func hashAndSalt(pwd []byte) string {
 	// than the MinCost (4)
 	hash, err := bcrypt.GenerateFromPassword(pwd, bcrypt.MinCost)
 	if err != nil {
-		log.Println(err)
+		log.Fatalln(err)
 	} // GenerateFromPassword returns a byte slice so we need to
 	// convert the bytes to a string and return it
 	return string(hash)
@@ -39,7 +39,7 @@ func prngString() string {
 	b := make([]byte, 10)
 	_, err := rand.Read(b)
 	if err != nil {
-		fmt.Println("error:", err)
+		log.Fatalln("error:", err)
 		return ""
 	}
 
