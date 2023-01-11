@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-chi/chi"
+	"github.com/go-redis/redis/v8"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/crypto/sha3"
 )
@@ -16,6 +18,11 @@ import (
 var users = map[string]string{
 	"user1": hashAndSalt([]byte("password1")),
 	"user2": "password2",
+}
+
+type Server struct {
+	Router *chi.Mux
+	Redis  *redis.Client
 }
 
 // signin takes a username and password and gives back a session token

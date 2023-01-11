@@ -26,11 +26,20 @@ func init() {
 }
 
 func main() {
-	r := chi.NewRouter()
-	r.Use(middleware.Logger)
+	s := NewServer()
+	s.MountHandlers()
+	http.ListenAndServe(":3000", s.Router)
+}
 
-	r.Post("/signin", signin)
-	r.Get("/welcome", welcome)
+func NewServer() *Server {
+	s := &Server{}
+	s.Router = chi.NewRouter()
+	return s
+}
 
-	http.ListenAndServe(":3000", r)
+func (s *Server) MountHandlers() {
+	s.Router.Use(middleware.Logger)
+
+	s.Router.Post("/signin", signin)
+	s.Router.Get("/welcome", welcome)
 }
